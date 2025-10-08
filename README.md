@@ -2,6 +2,17 @@
 
 A comprehensive decentralized stock exchange built on Solana blockchain using the Anchor framework. This project implements a full-featured on-chain trading infrastructure with order books, escrow, governance, and fee management.
 
+## 🔍 NEW: Solana Explorer Integration
+
+All tests now include **clickable Solana Explorer URLs** for every account, token, and transaction!
+
+- 🔗 View user wallets in real-time
+- 🪙 Inspect token mints and holdings
+- 📜 Track transaction history
+- 📊 Monitor balance changes during tests
+
+**Quick Start**: See [EXPLORER_QUICK_ACCESS.md](./EXPLORER_QUICK_ACCESS.md) for instant access to Explorer features!
+
 ## 🏗️ Architecture Overview
 
 This project consists of four main Solana programs:
