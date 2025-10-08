@@ -22,18 +22,16 @@ pub mod exchange_core {
         instructions::initialize_exchange::handler(ctx, maker_fee_bps, taker_fee_bps)
     }
 
-    /// Initialize an order book for a trading pair
+    /// Initialize an order book for a trading pair (base token vs SOL)
     pub fn initialize_order_book(
         ctx: Context<InitializeOrderBook>,
         base_mint: Pubkey,
-        quote_mint: Pubkey,
         tick_size: u64,
         min_order_size: u64,
     ) -> Result<()> {
         instructions::initialize_order_book::handler(
             ctx,
             base_mint,
-            quote_mint,
             tick_size,
             min_order_size,
         )

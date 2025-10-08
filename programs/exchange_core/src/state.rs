@@ -23,14 +23,13 @@ impl Exchange {
         1; // bump
 }
 
-/// Order book for a trading pair
+/// Order book for a trading pair (base token vs SOL)
 #[account]
 pub struct OrderBook {
     pub exchange: Pubkey,
     pub base_mint: Pubkey,
-    pub quote_mint: Pubkey,
     pub base_vault: Pubkey,
-    pub quote_vault: Pubkey,
+    pub sol_vault: Pubkey, // Vault holding SOL (quote currency)
     pub tick_size: u64,
     pub min_order_size: u64,
     pub bids_head: Option<u64>, // linked list head for buy orders
@@ -47,9 +46,8 @@ impl OrderBook {
     pub const LEN: usize = 8 + // discriminator
         32 + // exchange
         32 + // base_mint
-        32 + // quote_mint
         32 + // base_vault
-        32 + // quote_vault
+        32 + // sol_vault
         8 + // tick_size
         8 + // min_order_size
         1 + 8 + // bids_head (Option<u64>)

@@ -2,6 +2,7 @@ use crate::constants::*;
 use crate::error::ExchangeError;
 use crate::state::*;
 use anchor_lang::prelude::*;
+use anchor_lang::system_program;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 #[derive(Accounts)]
@@ -30,12 +31,21 @@ pub struct CancelOrder<'info> {
     pub trader: Signer<'info>,
 
     #[account(mut)]
-    pub trader_token_account: Account<'info, TokenAccount>,
+    pub trader_base_account: Account<'info, TokenAccount>,
 
     #[account(mut)]
-    pub vault: Account<'info, TokenAccount>,
+    pub base_vault: Account<'info, TokenAccount>,
+
+    /// CHECK: SOL vault PDA for holding quote currency (SOL)
+    #[account(
+        mut,
+        seeds = [b"sol_vault", order_book.key().as_ref()],
+        bump,
+    )]
+    pub sol_vault: AccountInfo<'info>,
 
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 pub fn handler(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
@@ -49,43 +59,56 @@ pub fn handler(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
         .checked_sub(order.filled_quantity)
         .ok_or(ExchangeError::Overflow)?;
 
-    // Calculate amount to return
-    let amount_to_return = match order.side {
-        OrderSide::Ask => unfilled_quantity,
-        OrderSide::Bid => order
-            .price
-            .checked_mul(unfilled_quantity)
-            .ok_or(ExchangeError::Overflow)?,
-    };
+    // Return locked tokens/SOL to trader based on order side
+    if unfilled_quantity > 0 {
+        match order.side {
+            OrderSide::Ask => {
+                // Return base tokens for sell order
+                let base_mint = ctx.accounts.order_book.base_mint;
+                let bump = ctx.accounts.order_book.bump;
+                
+                let signer_seeds = &[
+                    ORDER_BOOK_SEED,
+                    base_mint.as_ref(),
+                    &[bump],
+                ];
 
-    // Return locked tokens to trader
-    if amount_to_return > 0 {
-        // Get order book data needed for seeds
-        let base_mint = ctx.accounts.order_book.base_mint;
-        let quote_mint = ctx.accounts.order_book.quote_mint;
-        let bump = ctx.accounts.order_book.bump;
-        
-        let signer_seeds = &[
-            ORDER_BOOK_SEED,
-            base_mint.as_ref(),
-            quote_mint.as_ref(),
-            &[bump],
-        ];
+                let cpi_accounts = Transfer {
+                    from: ctx.accounts.base_vault.to_account_info(),
+                    to: ctx.accounts.trader_base_account.to_account_info(),
+                    authority: ctx.accounts.order_book.to_account_info(),
+                };
 
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.vault.to_account_info(),
-            to: ctx.accounts.trader_token_account.to_account_info(),
-            authority: ctx.accounts.order_book.to_account_info(),
-        };
+                token::transfer(
+                    CpiContext::new_with_signer(
+                        ctx.accounts.token_program.to_account_info(),
+                        cpi_accounts,
+                        &[signer_seeds],
+                    ),
+                    unfilled_quantity,
+                )?;
+            }
+            OrderSide::Bid => {
+                // Return SOL for buy order
+                let sol_amount = order
+                    .price
+                    .checked_mul(unfilled_quantity)
+                    .ok_or(ExchangeError::Overflow)?;
 
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                cpi_accounts,
-                &[signer_seeds],
-            ),
-            amount_to_return,
-        )?;
+                **ctx.accounts.sol_vault.try_borrow_mut_lamports()? = ctx
+                    .accounts
+                    .sol_vault
+                    .lamports()
+                    .checked_sub(sol_amount)
+                    .ok_or(ExchangeError::InsufficientFunds)?;
+                **ctx.accounts.trader.try_borrow_mut_lamports()? = ctx
+                    .accounts
+                    .trader
+                    .lamports()
+                    .checked_add(sol_amount)
+                    .ok_or(ExchangeError::Overflow)?;
+            }
+        }
     }
 
     // Mark order as inactive
@@ -99,9 +122,9 @@ pub fn handler(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
         .ok_or(ExchangeError::Overflow)?;
 
     msg!(
-        "Order {} cancelled, returned {} tokens",
+        "Order {} cancelled, returned unfilled quantity: {}",
         order_id,
-        amount_to_return
+        unfilled_quantity
     );
 
     Ok(())

@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use crate::constants::*;
 use crate::error::FeeError;
 use crate::state::*;
@@ -14,20 +13,24 @@ pub struct DistributeFees<'info> {
     )]
     pub fee_config: Account<'info, FeeConfig>,
     
+    /// CHECK: Fee collector holding SOL
     #[account(mut)]
-    pub fee_collector_account: Account<'info, TokenAccount>,
+    pub fee_collector: AccountInfo<'info>,
     
+    /// CHECK: Treasury receives SOL
     #[account(mut)]
-    pub treasury_account: Account<'info, TokenAccount>,
+    pub treasury: AccountInfo<'info>,
     
+    /// CHECK: Staking pool receives SOL
     #[account(mut)]
-    pub staking_pool_account: Account<'info, TokenAccount>,
+    pub staking_pool: AccountInfo<'info>,
     
+    /// CHECK: LP rewards pool receives SOL
     #[account(mut)]
-    pub lp_rewards_account: Account<'info, TokenAccount>,
+    pub lp_rewards: AccountInfo<'info>,
     
     pub authority: Signer<'info>,
-    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 pub fn handler(ctx: Context<DistributeFees>, amount: u64) -> Result<()> {
@@ -52,58 +55,52 @@ pub fn handler(ctx: Context<DistributeFees>, amount: u64) -> Result<()> {
         .checked_div(TOTAL_SHARES_BPS as u64)
         .ok_or(FeeError::Overflow)?;
 
-    let fee_config = &ctx.accounts.fee_config;
-    let seeds = &[FEE_CONFIG_SEED, &[fee_config.bump]];
-
-    // Distribute to treasury
+    // Distribute SOL to treasury
     if treasury_amount > 0 {
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.fee_collector_account.to_account_info(),
-            to: ctx.accounts.treasury_account.to_account_info(),
-            authority: ctx.accounts.fee_config.to_account_info(),
-        };
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                cpi_accounts,
-                &[seeds]
-            ),
-            treasury_amount
-        )?;
+        **ctx.accounts.fee_collector.try_borrow_mut_lamports()? = ctx
+            .accounts
+            .fee_collector
+            .lamports()
+            .checked_sub(treasury_amount)
+            .ok_or(FeeError::InsufficientFeeBalance)?;
+        **ctx.accounts.treasury.try_borrow_mut_lamports()? = ctx
+            .accounts
+            .treasury
+            .lamports()
+            .checked_add(treasury_amount)
+            .ok_or(FeeError::Overflow)?;
     }
 
-    // Distribute to stakers
+    // Distribute SOL to stakers
     if staker_amount > 0 {
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.fee_collector_account.to_account_info(),
-            to: ctx.accounts.staking_pool_account.to_account_info(),
-            authority: ctx.accounts.fee_config.to_account_info(),
-        };
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                cpi_accounts,
-                &[seeds]
-            ),
-            staker_amount
-        )?;
+        **ctx.accounts.fee_collector.try_borrow_mut_lamports()? = ctx
+            .accounts
+            .fee_collector
+            .lamports()
+            .checked_sub(staker_amount)
+            .ok_or(FeeError::InsufficientFeeBalance)?;
+        **ctx.accounts.staking_pool.try_borrow_mut_lamports()? = ctx
+            .accounts
+            .staking_pool
+            .lamports()
+            .checked_add(staker_amount)
+            .ok_or(FeeError::Overflow)?;
     }
 
-    // Distribute to LPs
+    // Distribute SOL to LPs
     if lp_amount > 0 {
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.fee_collector_account.to_account_info(),
-            to: ctx.accounts.lp_rewards_account.to_account_info(),
-            authority: ctx.accounts.fee_config.to_account_info(),
-        };
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                cpi_accounts,
-                &[seeds]
-            ),
-            lp_amount
-        )?;
+        **ctx.accounts.fee_collector.try_borrow_mut_lamports()? = ctx
+            .accounts
+            .fee_collector
+            .lamports()
+            .checked_sub(lp_amount)
+            .ok_or(FeeError::InsufficientFeeBalance)?;
+        **ctx.accounts.lp_rewards.try_borrow_mut_lamports()? = ctx
+            .accounts
+            .lp_rewards
+            .lamports()
+            .checked_add(lp_amount)
+            .ok_or(FeeError::Overflow)?;
     }
 
     let fee_config_mut = &mut ctx.accounts.fee_config;
@@ -112,7 +109,7 @@ pub fn handler(ctx: Context<DistributeFees>, amount: u64) -> Result<()> {
         .ok_or(FeeError::Overflow)?;
 
     msg!(
-        "Fees distributed: Treasury {}, Stakers {}, LPs {}",
+        "Fees distributed in SOL: Treasury {}, Stakers {}, LPs {}",
         treasury_amount,
         staker_amount,
         lp_amount

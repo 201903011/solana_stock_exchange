@@ -6,13 +6,12 @@ pub struct EscrowAccount {
     pub buyer: Pubkey,
     pub seller: Pubkey,
     pub base_mint: Pubkey,
-    pub quote_mint: Pubkey,
     pub base_amount: u64,
-    pub quote_amount: u64,
+    pub sol_amount: u64, // Changed from quote_amount - now stores SOL
     pub base_deposited: u64,
-    pub quote_deposited: u64,
+    pub sol_deposited: u64, // Changed from quote_deposited
     pub base_vault: Pubkey,
-    pub quote_vault: Pubkey,
+    pub sol_vault: Pubkey, // Changed from quote_vault - PDA holding SOL
     pub status: EscrowStatus,
     pub created_at: i64,
     pub expiry: i64,
@@ -25,20 +24,19 @@ impl EscrowAccount {
         32 + // buyer
         32 + // seller
         32 + // base_mint
-        32 + // quote_mint
         8 + // base_amount
-        8 + // quote_amount
+        8 + // sol_amount
         8 + // base_deposited
-        8 + // quote_deposited
+        8 + // sol_deposited
         32 + // base_vault
-        32 + // quote_vault
+        32 + // sol_vault
         1 + // status
         8 + // created_at
         8 + // expiry
         1; // bump
 
     pub fn is_fully_funded(&self) -> bool {
-        self.base_deposited >= self.base_amount && self.quote_deposited >= self.quote_amount
+        self.base_deposited >= self.base_amount && self.sol_deposited >= self.sol_amount
     }
 
     pub fn is_expired(&self, current_time: i64) -> bool {

@@ -23,16 +23,20 @@ pub struct CancelEscrow<'info> {
     #[account(mut)]
     pub base_vault: Account<'info, TokenAccount>,
     
+    /// CHECK: SOL vault PDA
     #[account(mut)]
-    pub quote_vault: Account<'info, TokenAccount>,
+    pub sol_vault: AccountInfo<'info>,
     
-    #[account(mut)]
-    pub buyer_refund_account: Account<'info, TokenAccount>,
-    
+    /// CHECK: Seller receives base token refund
     #[account(mut)]
     pub seller_refund_account: Account<'info, TokenAccount>,
     
+    /// CHECK: Buyer receives SOL refund
+    #[account(mut)]
+    pub buyer: AccountInfo<'info>,
+    
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 pub fn handler(ctx: Context<CancelEscrow>) -> Result<()> {
@@ -69,21 +73,20 @@ pub fn handler(ctx: Context<CancelEscrow>) -> Result<()> {
         )?;
     }
 
-    // Refund quote tokens if any deposited
-    if escrow.quote_deposited > 0 {
-        let refund_quote = Transfer {
-            from: ctx.accounts.quote_vault.to_account_info(),
-            to: ctx.accounts.buyer_refund_account.to_account_info(),
-            authority: escrow.to_account_info(),
-        };
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                refund_quote,
-                &[signer_seeds]
-            ),
-            escrow.quote_deposited
-        )?;
+    // Refund SOL if any deposited
+    if escrow.sol_deposited > 0 {
+        **ctx.accounts.sol_vault.try_borrow_mut_lamports()? = ctx
+            .accounts
+            .sol_vault
+            .lamports()
+            .checked_sub(escrow.sol_deposited)
+            .ok_or(EscrowError::InsufficientFunds)?;
+        **ctx.accounts.buyer.try_borrow_mut_lamports()? = ctx
+            .accounts
+            .buyer
+            .lamports()
+            .checked_add(escrow.sol_deposited)
+            .ok_or(EscrowError::Overflow)?;
     }
 
     // Update status
@@ -94,10 +97,10 @@ pub fn handler(ctx: Context<CancelEscrow>) -> Result<()> {
     };
 
     msg!(
-        "Escrow {} cancelled: Refunded {} base and {} quote tokens",
+        "Escrow {} cancelled: Refunded {} base tokens and {} SOL",
         escrow.trade_id,
         escrow.base_deposited,
-        escrow.quote_deposited
+        escrow.sol_deposited
     );
 
     Ok(())

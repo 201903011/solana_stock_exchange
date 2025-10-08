@@ -21,11 +21,12 @@ pub struct ExecuteSwap<'info> {
     )]
     pub base_vault: Account<'info, TokenAccount>,
     
+    /// CHECK: SOL vault PDA
     #[account(
         mut,
-        constraint = quote_vault.key() == escrow.quote_vault
+        constraint = sol_vault.key() == escrow.sol_vault
     )]
-    pub quote_vault: Account<'info, TokenAccount>,
+    pub sol_vault: AccountInfo<'info>,
     
     #[account(
         mut,
@@ -33,16 +34,18 @@ pub struct ExecuteSwap<'info> {
     )]
     pub buyer_base_account: Account<'info, TokenAccount>,
     
+    /// CHECK: Seller receives SOL to their wallet
     #[account(
         mut,
-        constraint = seller_quote_account.owner == escrow.seller
+        constraint = seller.key() == escrow.seller
     )]
-    pub seller_quote_account: Account<'info, TokenAccount>,
+    pub seller: AccountInfo<'info>,
     
     /// CHECK: Can be called by anyone once escrow is funded
     pub executor: Signer<'info>,
     
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 pub fn handler(ctx: Context<ExecuteSwap>) -> Result<()> {
@@ -73,29 +76,28 @@ pub fn handler(ctx: Context<ExecuteSwap>) -> Result<()> {
         escrow.base_amount
     )?;
 
-    // Transfer quote tokens to seller
-    let quote_transfer = Transfer {
-        from: ctx.accounts.quote_vault.to_account_info(),
-        to: ctx.accounts.seller_quote_account.to_account_info(),
-        authority: escrow.to_account_info(),
-    };
-    token::transfer(
-        CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            quote_transfer,
-            &[signer_seeds]
-        ),
-        escrow.quote_amount
-    )?;
+    // Transfer SOL to seller
+    **ctx.accounts.sol_vault.try_borrow_mut_lamports()? = ctx
+        .accounts
+        .sol_vault
+        .lamports()
+        .checked_sub(escrow.sol_amount)
+        .ok_or(EscrowError::InsufficientFunds)?;
+    **ctx.accounts.seller.try_borrow_mut_lamports()? = ctx
+        .accounts
+        .seller
+        .lamports()
+        .checked_add(escrow.sol_amount)
+        .ok_or(EscrowError::Overflow)?;
 
     // Update escrow status
     escrow.status = EscrowStatus::Executed;
 
     msg!(
-        "Escrow {} executed: {} base tokens to buyer, {} quote tokens to seller",
+        "Escrow {} executed: {} base tokens to buyer, {} SOL to seller",
         escrow.trade_id,
         escrow.base_amount,
-        escrow.quote_amount
+        escrow.sol_amount
     );
 
     Ok(())

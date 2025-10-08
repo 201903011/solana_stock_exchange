@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_lang::system_program;
 use crate::constants::*;
 use crate::error::FeeError;
 use crate::state::*;
@@ -14,22 +14,22 @@ pub struct CollectTradingFee<'info> {
     pub fee_config: Account<'info, FeeConfig>,
     
     #[account(mut)]
-    pub trader_token_account: Account<'info, TokenAccount>,
+    pub trader: Signer<'info>,
     
+    /// CHECK: Fee collector receives SOL
     #[account(
         mut,
-        constraint = fee_collector_account.key() == fee_config.fee_collector
+        constraint = fee_collector.key() == fee_config.fee_collector
     )]
-    pub fee_collector_account: Account<'info, TokenAccount>,
+    pub fee_collector: AccountInfo<'info>,
     
-    pub trader: Signer<'info>,
-    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 pub fn handler(ctx: Context<CollectTradingFee>, trade_amount: u64) -> Result<()> {
     let fee_config = &mut ctx.accounts.fee_config;
     
-    // Calculate fee
+    // Calculate fee in SOL
     let fee_amount = trade_amount
         .checked_mul(fee_config.trading_fee_bps as u64)
         .ok_or(FeeError::Overflow)?
@@ -37,15 +37,16 @@ pub fn handler(ctx: Context<CollectTradingFee>, trade_amount: u64) -> Result<()>
         .ok_or(FeeError::Overflow)?;
 
     if fee_amount > 0 {
-        // Transfer fee to collector
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.trader_token_account.to_account_info(),
-            to: ctx.accounts.fee_collector_account.to_account_info(),
-            authority: ctx.accounts.trader.to_account_info(),
-        };
-        token::transfer(
-            CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts),
-            fee_amount
+        // Transfer SOL fee to collector
+        system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                system_program::Transfer {
+                    from: ctx.accounts.trader.to_account_info(),
+                    to: ctx.accounts.fee_collector.to_account_info(),
+                },
+            ),
+            fee_amount,
         )?;
 
         // Update total fees collected
@@ -53,7 +54,7 @@ pub fn handler(ctx: Context<CollectTradingFee>, trade_amount: u64) -> Result<()>
             .checked_add(fee_amount)
             .ok_or(FeeError::Overflow)?;
 
-        msg!("Collected trading fee: {} ({}bps on {})", fee_amount, fee_config.trading_fee_bps, trade_amount);
+        msg!("Collected trading fee: {} SOL ({}bps on {})", fee_amount, fee_config.trading_fee_bps, trade_amount);
     }
 
     Ok(())

@@ -5,7 +5,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
 #[derive(Accounts)]
-#[instruction(base_mint: Pubkey, quote_mint: Pubkey)]
+#[instruction(base_mint: Pubkey)]
 pub struct InitializeOrderBook<'info> {
     #[account(
         mut,
@@ -22,14 +22,12 @@ pub struct InitializeOrderBook<'info> {
         seeds = [
             ORDER_BOOK_SEED,
             base_mint.key().as_ref(),
-            quote_mint.key().as_ref()
         ],
         bump
     )]
     pub order_book: Account<'info, OrderBook>,
 
     pub base_mint: Account<'info, Mint>,
-    pub quote_mint: Account<'info, Mint>,
 
     #[account(
         init,
@@ -45,19 +43,15 @@ pub struct InitializeOrderBook<'info> {
     )]
     pub base_vault: Account<'info, TokenAccount>,
 
+    /// CHECK: SOL vault PDA for holding quote currency (SOL)
     #[account(
         init,
         payer = authority,
-        token::mint = quote_mint,
-        token::authority = order_book,
-        seeds = [
-            VAULT_SEED,
-            order_book.key().as_ref(),
-            b"quote"
-        ],
+        space = 0,
+        seeds = [b"sol_vault", order_book.key().as_ref()],
         bump
     )]
-    pub quote_vault: Account<'info, TokenAccount>,
+    pub sol_vault: AccountInfo<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -70,7 +64,6 @@ pub struct InitializeOrderBook<'info> {
 pub fn handler(
     ctx: Context<InitializeOrderBook>,
     base_mint: Pubkey,
-    quote_mint: Pubkey,
     tick_size: u64,
     min_order_size: u64,
 ) -> Result<()> {
@@ -84,9 +77,8 @@ pub fn handler(
     let order_book = &mut ctx.accounts.order_book;
     order_book.exchange = ctx.accounts.exchange.key();
     order_book.base_mint = base_mint;
-    order_book.quote_mint = quote_mint;
     order_book.base_vault = ctx.accounts.base_vault.key();
-    order_book.quote_vault = ctx.accounts.quote_vault.key();
+    order_book.sol_vault = ctx.accounts.sol_vault.key();
     order_book.tick_size = tick_size;
     order_book.min_order_size = min_order_size;
     order_book.bids_head = None;
@@ -102,9 +94,8 @@ pub fn handler(
     exchange.total_markets = exchange.total_markets.checked_add(1).unwrap();
 
     msg!(
-        "Order book initialized for {}/{} with tick size: {}, min order: {}",
+        "Order book initialized for {} with SOL as quote currency, tick size: {}, min order: {}",
         base_mint,
-        quote_mint,
         tick_size,
         min_order_size
     );

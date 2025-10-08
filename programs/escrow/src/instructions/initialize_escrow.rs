@@ -20,7 +20,6 @@ pub struct InitializeEscrow<'info> {
     pub seller: SystemAccount<'info>,
     
     pub base_mint: Account<'info, Mint>,
-    pub quote_mint: Account<'info, Mint>,
     
     #[account(
         init,
@@ -32,15 +31,15 @@ pub struct InitializeEscrow<'info> {
     )]
     pub base_vault: Account<'info, TokenAccount>,
     
+    /// CHECK: SOL vault PDA for holding SOL
     #[account(
         init,
         payer = initializer,
-        token::mint = quote_mint,
-        token::authority = escrow,
-        seeds = [VAULT_SEED, escrow.key().as_ref(), b"quote"],
+        space = 0,
+        seeds = [b"sol_vault", escrow.key().as_ref()],
         bump
     )]
-    pub quote_vault: Account<'info, TokenAccount>,
+    pub sol_vault: AccountInfo<'info>,
     
     #[account(mut)]
     pub initializer: Signer<'info>,
@@ -54,7 +53,7 @@ pub fn handler(
     ctx: Context<InitializeEscrow>,
     trade_id: u64,
     base_amount: u64,
-    quote_amount: u64,
+    sol_amount: u64,
     expiry: i64,
 ) -> Result<()> {
     let current_time = Clock::get()?.unix_timestamp;
@@ -65,30 +64,29 @@ pub fn handler(
         EscrowError::InvalidStatus
     );
     
-    require!(base_amount > 0 && quote_amount > 0, EscrowError::InvalidDepositAmount);
+    require!(base_amount > 0 && sol_amount > 0, EscrowError::InvalidDepositAmount);
 
     let escrow = &mut ctx.accounts.escrow;
     escrow.trade_id = trade_id;
     escrow.buyer = ctx.accounts.buyer.key();
     escrow.seller = ctx.accounts.seller.key();
     escrow.base_mint = ctx.accounts.base_mint.key();
-    escrow.quote_mint = ctx.accounts.quote_mint.key();
     escrow.base_amount = base_amount;
-    escrow.quote_amount = quote_amount;
+    escrow.sol_amount = sol_amount;
     escrow.base_deposited = 0;
-    escrow.quote_deposited = 0;
+    escrow.sol_deposited = 0;
     escrow.base_vault = ctx.accounts.base_vault.key();
-    escrow.quote_vault = ctx.accounts.quote_vault.key();
+    escrow.sol_vault = ctx.accounts.sol_vault.key();
     escrow.status = EscrowStatus::Pending;
     escrow.created_at = current_time;
     escrow.expiry = expiry;
     escrow.bump = ctx.bumps.escrow;
 
     msg!(
-        "Escrow initialized: Trade ID {}, Base amount: {}, Quote amount: {}, Expiry: {}",
+        "Escrow initialized: Trade ID {}, Base amount: {}, SOL amount: {}, Expiry: {}",
         trade_id,
         base_amount,
-        quote_amount,
+        sol_amount,
         expiry
     );
 

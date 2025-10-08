@@ -12,15 +12,15 @@ declare_id!("Estdrnjx9yezLcJZs4nPaciYqt1vUEQyXYeEZZBJ5vRB");
 pub mod escrow {
     use super::*;
 
-    /// Initialize an escrow account for a trade
+    /// Initialize an escrow account for a trade (using SOL as quote currency)
     pub fn initialize_escrow(
         ctx: Context<InitializeEscrow>,
         trade_id: u64,
         base_amount: u64,
-        quote_amount: u64,
+        sol_amount: u64,
         expiry: i64,
     ) -> Result<()> {
-        instructions::initialize_escrow::handler(ctx, trade_id, base_amount, quote_amount, expiry)
+        instructions::initialize_escrow::handler(ctx, trade_id, base_amount, sol_amount, expiry)
     }
 
     /// Deposit tokens into escrow

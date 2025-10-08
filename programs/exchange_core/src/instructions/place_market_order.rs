@@ -2,6 +2,7 @@ use crate::constants::*;
 use crate::error::ExchangeError;
 use crate::state::*;
 use anchor_lang::prelude::*;
+use anchor_lang::system_program;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 #[derive(Accounts)]
@@ -35,17 +36,16 @@ pub struct PlaceMarketOrder<'info> {
     )]
     pub trader_base_account: Account<'info, TokenAccount>,
 
-    #[account(
-        mut,
-        constraint = trader_quote_account.owner == trader.key()
-    )]
-    pub trader_quote_account: Account<'info, TokenAccount>,
-
     #[account(mut)]
     pub base_vault: Account<'info, TokenAccount>,
 
-    #[account(mut)]
-    pub quote_vault: Account<'info, TokenAccount>,
+    /// CHECK: SOL vault PDA for holding quote currency (SOL)
+    #[account(
+        mut,
+        seeds = [b"sol_vault", order_book.key().as_ref()],
+        bump,
+    )]
+    pub sol_vault: AccountInfo<'info>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
@@ -72,29 +72,35 @@ pub fn handler(
     );
 
     let price = order_book.last_price;
-    let quote_amount = price.checked_mul(quantity).ok_or(ExchangeError::Overflow)?;
+    let sol_amount = price.checked_mul(quantity).ok_or(ExchangeError::Overflow)?;
 
     require!(
-        quote_amount <= max_quote_amount,
+        sol_amount <= max_quote_amount,
         ExchangeError::MaxQuoteAmountExceeded
     );
 
     // Execute trade based on side
     match side {
         OrderSide::Bid => {
-            // Buyer pays quote, receives base
-            let cpi_accounts_quote = Transfer {
-                from: ctx.accounts.trader_quote_account.to_account_info(),
-                to: ctx.accounts.quote_vault.to_account_info(),
-                authority: ctx.accounts.trader.to_account_info(),
-            };
-            token::transfer(
+            // Buyer pays SOL, receives base tokens
+            system_program::transfer(
                 CpiContext::new(
-                    ctx.accounts.token_program.to_account_info(),
-                    cpi_accounts_quote,
+                    ctx.accounts.system_program.to_account_info(),
+                    system_program::Transfer {
+                        from: ctx.accounts.trader.to_account_info(),
+                        to: ctx.accounts.sol_vault.to_account_info(),
+                    },
                 ),
-                quote_amount,
+                sol_amount,
             )?;
+
+            // Transfer base tokens from vault to buyer
+            let seeds = &[
+                ORDER_BOOK_SEED,
+                order_book.base_mint.as_ref(),
+                &[order_book.bump],
+            ];
+            let signer_seeds = &[&seeds[..]];
 
             let cpi_accounts_base = Transfer {
                 from: ctx.accounts.base_vault.to_account_info(),
@@ -105,18 +111,13 @@ pub fn handler(
                 CpiContext::new_with_signer(
                     ctx.accounts.token_program.to_account_info(),
                     cpi_accounts_base,
-                    &[&[
-                        ORDER_BOOK_SEED,
-                        order_book.base_mint.as_ref(),
-                        order_book.quote_mint.as_ref(),
-                        &[order_book.bump],
-                    ]],
+                    signer_seeds,
                 ),
                 quantity,
             )?;
         }
         OrderSide::Ask => {
-            // Seller pays base, receives quote
+            // Seller pays base tokens, receives SOL
             let cpi_accounts_base = Transfer {
                 from: ctx.accounts.trader_base_account.to_account_info(),
                 to: ctx.accounts.base_vault.to_account_info(),
@@ -130,24 +131,19 @@ pub fn handler(
                 quantity,
             )?;
 
-            let cpi_accounts_quote = Transfer {
-                from: ctx.accounts.quote_vault.to_account_info(),
-                to: ctx.accounts.trader_quote_account.to_account_info(),
-                authority: ctx.accounts.order_book.to_account_info(),
-            };
-            token::transfer(
-                CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
-                    cpi_accounts_quote,
-                    &[&[
-                        ORDER_BOOK_SEED,
-                        order_book.base_mint.as_ref(),
-                        order_book.quote_mint.as_ref(),
-                        &[order_book.bump],
-                    ]],
-                ),
-                quote_amount,
-            )?;
+            // Transfer SOL from vault to seller
+            **ctx.accounts.sol_vault.try_borrow_mut_lamports()? = ctx
+                .accounts
+                .sol_vault
+                .lamports()
+                .checked_sub(sol_amount)
+                .ok_or(ExchangeError::InsufficientFunds)?;
+            **ctx.accounts.trader.try_borrow_mut_lamports()? = ctx
+                .accounts
+                .trader
+                .lamports()
+                .checked_add(sol_amount)
+                .ok_or(ExchangeError::Overflow)?;
         }
     }
 
@@ -162,7 +158,7 @@ pub fn handler(
         .ok_or(ExchangeError::Overflow)?;
 
     msg!(
-        "Market order executed: Side {:?}, Quantity {}, Price {}",
+        "Market order executed: Side {:?}, Quantity {}, Price {} SOL",
         side,
         quantity,
         price
