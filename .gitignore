@@ -1,0 +1,41 @@
+# .gitignore
+
+# Anchor
+.anchor
+target/
+**/*.rs.bk
+test-ledger/
+
+# Node
+node_modules/
+dist/
+.env
+*.log
+
+# IDL
+!target/idl/
+!target/types/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Solana
+.config/
+test-ledger/
+
+# Build artifacts
+*.so
+*.dylib
+*.dll
+
+# Testing
+.nyc_output/
+coverage/
