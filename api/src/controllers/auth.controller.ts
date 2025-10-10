@@ -14,6 +14,7 @@ import {
 import { hashPassword, comparePassword, generateToken } from '../utils/auth';
 import { createTradingAccount, getTradingAccountPDA } from '../utils/solana';
 import { config } from '../config';
+import { toString } from 'express-validator/lib/utils';
 
 // User Registration
 export async function register(
@@ -299,9 +300,9 @@ export async function approveKYC(
         }
 
         // Get user wallet address
-        const user = await queryOne<User>(
+        const user = await queryOne(
             'SELECT wallet_address FROM users WHERE id = ?',
-            [kyc.user_id]
+            [kyc.user_id.toString()]
         );
 
         if (!user?.wallet_address) {

@@ -92,6 +92,8 @@ export function getExchangePDA(programId: PublicKey): [PublicKey, number] {
     return PublicKey.findProgramAddressSync([Buffer.from('exchange')], programId);
 }
 
+// Create trading account transaction for user to sign
+
 // Create trading account on Solana
 export async function createTradingAccount(userPublicKey: PublicKey): Promise<string> {
     try {
@@ -114,6 +116,48 @@ export async function createTradingAccount(userPublicKey: PublicKey): Promise<st
         return tx;
     } catch (error) {
         console.error('Error creating trading account:', error);
+        throw error;
+    }
+}
+
+// Check if trading account exists, initialize if not
+async function ensureTradingAccountInitialized(userPublicKey: PublicKey, programId: PublicKey): Promise<void> {
+    try {
+        const program = getExchangeProgram();
+        const [tradingAccountPDA] = getTradingAccountPDA(userPublicKey, programId);
+
+        // Try to fetch the trading account
+        try {
+            await (program.account as any).tradingAccount.fetch(tradingAccountPDA);
+            // Account exists, no need to initialize
+            return;
+        } catch (fetchError: any) {
+            // Account doesn't exist, initialize it
+            if (fetchError.message && (fetchError.message.includes('Account does not exist') || fetchError.message.includes('AccountNotInitialized'))) {
+                console.log(`Initializing trading account for user: ${userPublicKey.toString()}`);
+
+                const [exchangePDA] = getExchangePDA(programId);
+                const adminWallet = getAdminWallet();
+
+                // Admin wallet initializes the trading account for the user
+                await program.methods
+                    .initializeTradingAccount()
+                    .accounts({
+                        exchange: exchangePDA,
+                        tradingAccount: tradingAccountPDA,
+                        owner: userPublicKey,
+                        systemProgram: SystemProgram.programId,
+                    })
+                    .signers([])
+                    .rpc();
+
+                console.log(`Trading account initialized successfully for user: ${userPublicKey.toString()}`);
+                return;
+            }
+            throw fetchError;
+        }
+    } catch (error) {
+        console.error('Error ensuring trading account initialized:', error);
         throw error;
     }
 }
@@ -221,19 +265,42 @@ export async function placeLimitOrder(
         const program = getExchangeProgram();
         const programId = new PublicKey(config.solana.exchangeProgramId);
 
-
         const baseMint = new PublicKey(companyTokenMint);
         const [exchangePDA] = getExchangePDA(programId);
         const [orderBookPDA] = getOrderBookPDA(baseMint, programId);
         const [tradingAccountPDA] = getTradingAccountPDA(userPublicKey, programId);
 
-        // Check if order book exists
+        // Ensure trading account is initialized
+        await ensureTradingAccountInitialized(userPublicKey, programId);
+
+        // Check if order book exists and get tick size
         try {
             const orderBook = await (program.account as any).orderBook.fetch(orderBookPDA);
             if (!orderBook) {
                 throw new Error(`Order book does not exist for token ${companyTokenMint}. Please initialize the order book first.`);
             }
             const orderId = orderBook.nextOrderId;
+            const tickSize = orderBook.tickSize as BN;
+
+            // Align price to tick size
+            // Price must be a multiple of tick size
+            const priceNum = new BN(price);
+            const remainder = priceNum.mod(tickSize);
+
+            let alignedPrice: BN;
+            if (remainder.isZero()) {
+                alignedPrice = priceNum;
+            } else {
+                // Round down to nearest tick size multiple
+                alignedPrice = priceNum.sub(remainder);
+                console.log(`Price ${price} not aligned to tick size ${tickSize.toString()}`);
+                console.log(`Aligned price to ${alignedPrice.toString()}`);
+            }
+
+            // Validate aligned price
+            if (alignedPrice.isZero() || alignedPrice.isNeg()) {
+                throw new Error(`Invalid price: ${price}. Price must be at least ${tickSize.toString()} (one tick size)`);
+            }
 
             const [orderPDA] = getOrderPDA(orderBookPDA, orderId, programId);
             const [baseVaultPDA] = getBaseVaultPDA(orderBookPDA, programId);
@@ -248,7 +315,7 @@ export async function placeLimitOrder(
             const tx = await program.methods
                 .placeLimitOrder(
                     orderSide,
-                    new BN(price),
+                    alignedPrice,
                     new BN(quantity)
                 )
                 .accounts({
@@ -297,6 +364,9 @@ export async function placeMarketOrder(
         const [tradingAccountPDA] = getTradingAccountPDA(userPublicKey, programId);
         const [baseVaultPDA] = getBaseVaultPDA(orderBookPDA, programId);
         const [solVaultPDA] = getSolVaultPDA(orderBookPDA, programId);
+
+        // Ensure trading account is initialized
+        await ensureTradingAccountInitialized(userPublicKey, programId);
 
         const traderBaseAccount = await getOrCreateTokenAccount(userPublicKey, baseMint);
 

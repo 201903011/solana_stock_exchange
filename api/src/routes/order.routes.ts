@@ -25,7 +25,7 @@ router.post(
 );
 
 router.post('/:orderId/cancel', authenticate, cancelOrderHandler);
-router.get('/', authenticate, getUserOrders);
+router.get('/getorders', authenticate, getUserOrders);
 router.get('/book/:companyId', getOrderBook);
 
 export default router;

@@ -148,7 +148,7 @@ export async function getTradeHistory(
        ${whereClause}
        ORDER BY t.executed_at DESC
        LIMIT ? OFFSET ?`,
-            [userId, ...params, Number(limit), offset]
+            [userId, ...params, Number(limit).toString(), offset.toString()]
         );
 
         const [{ total }] = await query<{ total: number }>(
