@@ -7,7 +7,7 @@ import {
     TransactionInstruction,
     LAMPORTS_PER_SOL,
 } from '@solana/web3.js';
-import { Program, AnchorProvider, Wallet, BN, getProvider } from '@coral-xyz/anchor';
+import { Program, AnchorProvider, Wallet, BN } from '@coral-xyz/anchor';
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } from '@solana/spl-token';
 import bs58 from 'bs58';
 import { config } from '../config';
@@ -38,13 +38,13 @@ export function createProvider(wallet?: Wallet): AnchorProvider {
 // Get Exchange Core program
 export function getExchangeProgram(provider?: AnchorProvider): Program {
     const prov = provider || createProvider();
-    return new Program(exchangeCoreIDL as any, prov);
+    return new Program(exchangeCoreIDL as any, config.solana.exchangeProgramId, prov);
 }
 
 // Get Governance program
 export function getGovernanceProgram(provider?: AnchorProvider): Program {
     const prov = provider || createProvider();
-    return new Program(governanceIDL as any, prov);
+    return new Program(governanceIDL as any, config.solana.governanceProgramId, prov);
 }
 
 // Get trading account PDA
@@ -163,14 +163,13 @@ export async function placeLimitOrder(
         const program = getExchangeProgram();
         const programId = new PublicKey(config.solana.exchangeProgramId);
 
-
         const baseMint = new PublicKey(companyTokenMint);
         const [exchangePDA] = getExchangePDA(programId);
         const [orderBookPDA] = getOrderBookPDA(baseMint, programId);
         const [tradingAccountPDA] = getTradingAccountPDA(userPublicKey, programId);
 
         // Fetch order book to get next order ID
-        const orderBook = await (program.account as any).orderBook.fetch(orderBookPDA);
+        const orderBook = await program.account.orderBook.fetch(orderBookPDA);
         const orderId = orderBook.nextOrderId;
 
         const [orderPDA] = getOrderPDA(orderBookPDA, orderId, programId);
@@ -180,8 +179,6 @@ export async function placeLimitOrder(
         const traderBaseAccount = await getOrCreateTokenAccount(userPublicKey, baseMint);
 
         const orderSide = side === 'BUY' ? { bid: {} } : { ask: {} };
-
-        const admin = getProvider();
 
         const tx = await program.methods
             .placeLimitOrder(
@@ -198,7 +195,6 @@ export async function placeLimitOrder(
                 traderBaseAccount,
                 baseVault: baseVaultPDA,
                 solVault: solVaultPDA,
-                authority: admin.publicKey ?? process.env.ADMIN_WALLET_PUBLIC_KEY ?? "",
                 tokenProgram: TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
             })

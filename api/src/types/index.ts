@@ -102,7 +102,6 @@ export interface CompanyRegistration {
     symbol: string;
     name: string;
     description?: string;
-    token_mint: string;
     total_shares: string;
     sector?: string;
     industry?: string;

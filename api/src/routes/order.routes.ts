@@ -13,7 +13,7 @@ const router = Router();
 
 // All routes require authentication
 router.post(
-    '/',
+    '/place',
     authenticate,
     validate([
         body('company_id').isInt().withMessage('Company ID is required'),

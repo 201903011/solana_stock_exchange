@@ -427,7 +427,7 @@ export async function getPendingKYCs(
        WHERE k.status = 'PENDING'
        ORDER BY k.submitted_at DESC
        LIMIT ? OFFSET ?`,
-            [Number(limit), offset]
+            [Number(limit).toString(), offset.toString()]
         );
 
         const [{ total }] = await query<{ total: number }>(

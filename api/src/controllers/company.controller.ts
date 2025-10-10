@@ -1,8 +1,8 @@
 import { Response } from 'express';
-import { PublicKey } from '@solana/web3.js';
-import { query, queryOne, beginTransaction } from '../database/connection';
+import { createMint } from '@solana/spl-token';
+import { query, queryOne } from '../database/connection';
 import { AuthRequest, Company, CompanyRegistration, ApiResponse } from '../types';
-import { config } from '../config';
+import { connection, getAdminWallet } from '../utils/solana';
 
 // Admin: Register Company
 export async function registerCompany(
@@ -13,30 +13,35 @@ export async function registerCompany(
         const adminId = req.user?.userId;
         const companyData: CompanyRegistration = req.body as any;
 
-        // Validate token mint address
-        try {
-            new PublicKey(companyData.token_mint);
-        } catch (error) {
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid token mint address',
-            });
-        }
-
-        // Check if symbol or token mint already exists
+        // Check if symbol already exists
         const existing = await queryOne<Company>(
-            'SELECT id FROM companies WHERE symbol = ? OR token_mint = ?',
-            [companyData.symbol, companyData.token_mint]
+            'SELECT id FROM companies WHERE symbol = ?',
+            [companyData.symbol]
         );
 
         if (existing) {
             return res.status(400).json({
                 success: false,
-                error: 'Company with this symbol or token mint already exists',
+                error: 'Company with this symbol already exists',
             });
         }
 
-        // Insert company
+        // Get admin wallet
+        const adminWallet = getAdminWallet();
+
+        // Create new mint for company token
+        console.log('Creating new token mint for company:', companyData.symbol);
+        const tokenMint = await createMint(
+            connection,
+            adminWallet, // payer
+            adminWallet.publicKey, // mint authority
+            adminWallet.publicKey, // freeze authority
+            9 // decimals
+        );
+
+        console.log('Token mint created:', tokenMint.toString());
+
+        // Insert company with newly created mint
         const result = await query(
             `INSERT INTO companies (
         symbol, name, description, token_mint, total_shares, sector, industry,
@@ -46,7 +51,7 @@ export async function registerCompany(
                 companyData.symbol,
                 companyData.name,
                 companyData.description || null,
-                companyData.token_mint,
+                tokenMint.toString(),
                 companyData.total_shares,
                 companyData.sector || null,
                 companyData.industry || null,
@@ -62,8 +67,13 @@ export async function registerCompany(
 
         return res.status(201).json({
             success: true,
-            data: { id: companyId },
-            message: 'Company registered successfully',
+            data: {
+                id: companyId,
+                symbol: companyData.symbol,
+                name: companyData.name,
+                token_mint: tokenMint.toString()
+            },
+            message: 'Company registered successfully with new token mint',
         });
     } catch (error) {
         console.error('Register company error:', error);
@@ -98,7 +108,7 @@ export async function getAllCompanies(
 
         const companies = await query<Company>(
             `SELECT * FROM companies ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-            [...params, Number(limit), offset]
+            [...params, Number(limit).toString(), offset.toString()]
         );
 
         const [{ total }] = await query<{ total: number }>(

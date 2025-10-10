@@ -17,7 +17,7 @@ router.get('/:id', getCompanyById);
 
 // Admin routes
 router.post(
-    '/',
+    '/register',
     authenticate,
     authorizeAdmin,
     validate([
