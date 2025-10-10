@@ -1,8 +1,8 @@
 import { Response } from 'express';
-import { createMint } from '@solana/spl-token';
+import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from '@solana/spl-token';
 import { query, queryOne } from '../database/connection';
 import { AuthRequest, Company, CompanyRegistration, ApiResponse } from '../types';
-import { connection, getAdminWallet } from '../utils/solana';
+import { connection, getAdminWallet, initializeOrderBook } from '../utils/solana';
 
 // Admin: Register Company
 export async function registerCompany(
@@ -41,6 +41,39 @@ export async function registerCompany(
 
         console.log('Token mint created:', tokenMint.toString());
 
+        // Create associated token account for admin to hold the minted tokens
+        const adminTokenAccount = await getOrCreateAssociatedTokenAccount(
+            connection,
+            adminWallet,
+            tokenMint,
+            adminWallet.publicKey
+        );
+
+        console.log('Admin token account created:', adminTokenAccount.address.toString());
+
+        // Mint total_shares to admin's token account
+        const totalSharesWithDecimals = BigInt(companyData.total_shares) * BigInt(10 ** 9);
+        await mintTo(
+            connection,
+            adminWallet,
+            tokenMint,
+            adminTokenAccount.address,
+            adminWallet.publicKey, // mint authority
+            totalSharesWithDecimals
+        );
+
+        console.log(`Minted ${companyData.total_shares} tokens to admin account`);
+
+        // Initialize order book for the token
+        console.log('Initializing order book for token:', tokenMint.toString());
+        const orderBookData = await initializeOrderBook(
+            tokenMint,
+            companyData.tick_size || '1000000',
+            companyData.min_order_size || '1'
+        );
+
+        console.log('Order book initialized:', orderBookData.orderBookAddress);
+
         // Insert company with newly created mint
         const result = await query(
             `INSERT INTO companies (
@@ -71,9 +104,15 @@ export async function registerCompany(
                 id: companyId,
                 symbol: companyData.symbol,
                 name: companyData.name,
-                token_mint: tokenMint.toString()
+                token_mint: tokenMint.toString(),
+                total_shares: companyData.total_shares,
+                admin_token_account: adminTokenAccount.address.toString(),
+                minted_amount: totalSharesWithDecimals.toString(),
+                order_book_address: orderBookData.orderBookAddress,
+                base_vault_address: orderBookData.baseVaultAddress,
+                sol_vault_address: orderBookData.solVaultAddress
             },
-            message: 'Company registered successfully with new token mint',
+            message: `Company registered successfully. Minted ${companyData.total_shares} tokens and initialized order book`,
         });
     } catch (error) {
         console.error('Register company error:', error);

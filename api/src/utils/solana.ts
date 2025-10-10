@@ -7,7 +7,7 @@ import {
     TransactionInstruction,
     LAMPORTS_PER_SOL,
 } from '@solana/web3.js';
-import { Program, AnchorProvider, Wallet, BN, getProvider } from '@coral-xyz/anchor';
+import { Program, AnchorProvider, Wallet, BN } from '@coral-xyz/anchor';
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } from '@solana/spl-token';
 import bs58 from 'bs58';
 import { config } from '../config';
@@ -151,6 +151,64 @@ export async function getOrCreateTokenAccount(
     return associatedTokenAddress;
 }
 
+// Initialize order book for a token
+export async function initializeOrderBook(
+    baseMint: PublicKey,
+    tickSize: string = '1000000', // 0.001 SOL with 9 decimals
+    minOrderSize: string = '1'
+): Promise<{ orderBookAddress: string; baseVaultAddress: string; solVaultAddress: string; signature: string }> {
+    try {
+        const program = getExchangeProgram();
+        const programId = new PublicKey(config.solana.exchangeProgramId);
+        const adminWallet = getAdminWallet();
+
+        const [exchangePDA] = getExchangePDA(programId);
+        const [orderBookPDA] = getOrderBookPDA(baseMint, programId);
+        const [baseVaultPDA] = getBaseVaultPDA(orderBookPDA, programId);
+        const [solVaultPDA] = getSolVaultPDA(orderBookPDA, programId);
+
+        console.log('Initializing order book...');
+        console.log('Exchange PDA:', exchangePDA.toString());
+        console.log('Order Book PDA:', orderBookPDA.toString());
+        console.log('Base Vault PDA:', baseVaultPDA.toString());
+        console.log('SOL Vault PDA:', solVaultPDA.toString());
+
+        // Get the SYSVAR_RENT_PUBKEY
+        const SYSVAR_RENT_PUBKEY = new PublicKey('SysvarRent111111111111111111111111111111111');
+
+        const tx = await program.methods
+            .initializeOrderBook(
+                baseMint,
+                new BN(tickSize),
+                new BN(minOrderSize)
+            )
+            .accounts({
+                exchange: exchangePDA,
+                orderBook: orderBookPDA,
+                baseMint: baseMint,
+                baseVault: baseVaultPDA,
+                solVault: solVaultPDA,
+                authority: adminWallet.publicKey,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+                rent: SYSVAR_RENT_PUBKEY,
+            })
+            .rpc();
+
+        console.log('Order book initialized successfully:', tx);
+
+        return {
+            orderBookAddress: orderBookPDA.toString(),
+            baseVaultAddress: baseVaultPDA.toString(),
+            solVaultAddress: solVaultPDA.toString(),
+            signature: tx
+        };
+    } catch (error) {
+        console.error('Error initializing order book:', error);
+        throw error;
+    }
+}
+
 // Place limit order
 export async function placeLimitOrder(
     userPublicKey: PublicKey,
@@ -169,42 +227,52 @@ export async function placeLimitOrder(
         const [orderBookPDA] = getOrderBookPDA(baseMint, programId);
         const [tradingAccountPDA] = getTradingAccountPDA(userPublicKey, programId);
 
-        // Fetch order book to get next order ID
-        const orderBook = await (program.account as any).orderBook.fetch(orderBookPDA);
-        const orderId = orderBook.nextOrderId;
+        // Check if order book exists
+        try {
+            const orderBook = await (program.account as any).orderBook.fetch(orderBookPDA);
+            if (!orderBook) {
+                throw new Error(`Order book does not exist for token ${companyTokenMint}. Please initialize the order book first.`);
+            }
+            const orderId = orderBook.nextOrderId;
 
-        const [orderPDA] = getOrderPDA(orderBookPDA, orderId, programId);
-        const [baseVaultPDA] = getBaseVaultPDA(orderBookPDA, programId);
-        const [solVaultPDA] = getSolVaultPDA(orderBookPDA, programId);
+            const [orderPDA] = getOrderPDA(orderBookPDA, orderId, programId);
+            const [baseVaultPDA] = getBaseVaultPDA(orderBookPDA, programId);
+            const [solVaultPDA] = getSolVaultPDA(orderBookPDA, programId);
 
-        const traderBaseAccount = await getOrCreateTokenAccount(userPublicKey, baseMint);
+            const traderBaseAccount = await getOrCreateTokenAccount(userPublicKey, baseMint);
 
-        const orderSide = side === 'BUY' ? { bid: {} } : { ask: {} };
+            const orderSide = side === 'BUY' ? { bid: {} } : { ask: {} };
 
-        const admin = getProvider();
+            const adminWallet = getAdminWallet();
 
-        const tx = await program.methods
-            .placeLimitOrder(
-                orderSide,
-                new BN(price),
-                new BN(quantity)
-            )
-            .accounts({
-                exchange: exchangePDA,
-                orderBook: orderBookPDA,
-                order: orderPDA,
-                tradingAccount: tradingAccountPDA,
-                trader: userPublicKey,
-                traderBaseAccount,
-                baseVault: baseVaultPDA,
-                solVault: solVaultPDA,
-                authority: admin.publicKey ?? process.env.ADMIN_WALLET_PUBLIC_KEY ?? "",
-                tokenProgram: TOKEN_PROGRAM_ID,
-                systemProgram: SystemProgram.programId,
-            })
-            .rpc();
+            const tx = await program.methods
+                .placeLimitOrder(
+                    orderSide,
+                    new BN(price),
+                    new BN(quantity)
+                )
+                .accounts({
+                    exchange: exchangePDA,
+                    orderBook: orderBookPDA,
+                    order: orderPDA,
+                    tradingAccount: tradingAccountPDA,
+                    trader: userPublicKey,
+                    traderBaseAccount,
+                    baseVault: baseVaultPDA,
+                    solVault: solVaultPDA,
+                    authority: adminWallet.publicKey,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                })
+                .rpc();
 
-        return tx;
+            return tx;
+        } catch (fetchError: any) {
+            if (fetchError.message && fetchError.message.includes('Account does not exist')) {
+                throw new Error(`Order book not initialized for token ${companyTokenMint}. Please contact admin to initialize the order book.`);
+            }
+            throw fetchError;
+        }
     } catch (error) {
         console.error('Error placing limit order:', error);
         throw error;
