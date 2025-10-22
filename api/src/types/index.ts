@@ -351,6 +351,8 @@ export interface ApiResponse<T = any> {
     data?: T;
     message?: string;
     error?: string;
+    timestamp?: Date;
+    requestId?: string;
 }
 
 export interface PaginatedResponse<T> {
@@ -362,6 +364,98 @@ export interface PaginatedResponse<T> {
         total: number;
         totalPages: number;
     };
+    timestamp?: Date;
+    requestId?: string;
+}
+
+// Generic API Request structure
+export interface BaseRequest {
+    requestId?: string;
+    timestamp?: Date;
+}
+
+// Notification Types
+export enum NotificationType {
+    USER_REGISTRATION = 'USER_REGISTRATION',
+    KYC_APPROVED = 'KYC_APPROVED',
+    KYC_REJECTED = 'KYC_REJECTED',
+    DEPOSIT_CONFIRMED = 'DEPOSIT_CONFIRMED',
+    WITHDRAWAL_PROCESSING = 'WITHDRAWAL_PROCESSING',
+    WITHDRAWAL_CONFIRMED = 'WITHDRAWAL_CONFIRMED',
+    NEW_LISTING = 'NEW_LISTING',
+    IPO_OPENED = 'IPO_OPENED',
+    IPO_ALLOTMENT = 'IPO_ALLOTMENT',
+    ORDER_PLACED = 'ORDER_PLACED',
+    ORDER_FILLED = 'ORDER_FILLED',
+    ORDER_CANCELLED = 'ORDER_CANCELLED',
+    ORDERS_MATCHED = 'ORDERS_MATCHED',
+    TRADE_EXECUTED = 'TRADE_EXECUTED',
+    TRADE_SUCCESS = 'TRADE_SUCCESS'
+}
+
+export interface Notification {
+    id: number;
+    user_id: number;
+    type: NotificationType;
+    title: string;
+    message: string;
+    data?: any;
+    is_read: boolean;
+    created_at: Date;
+}
+
+export interface NotificationRequest {
+    user_id: number;
+    type: NotificationType;
+    title: string;
+    message: string;
+    data?: any;
+}
+
+// Exchange Statistics
+export interface ExchangeStats {
+    total_users: number;
+    active_users: number;
+    total_companies: number;
+    listed_companies: number;
+    total_trades: number;
+    total_volume: bigint;
+    active_orders: number;
+    pending_kyc: number;
+    block_height: number;
+    network_status: string;
+}
+
+// Market Data
+export interface MarketData {
+    company_id: number;
+    symbol: string;
+    current_price: bigint;
+    price_change_24h: bigint;
+    price_change_percentage_24h: number;
+    volume_24h: bigint;
+    market_cap: bigint;
+    high_24h: bigint;
+    low_24h: bigint;
+    last_updated: Date;
+}
+
+// Order Book Data
+export interface OrderBookLevel {
+    price: bigint;
+    quantity: bigint;
+    total: bigint;
+    orders: number;
+}
+
+export interface OrderBookData {
+    company_id: number;
+    symbol: string;
+    bids: OrderBookLevel[];
+    asks: OrderBookLevel[];
+    spread: bigint;
+    mid_price: bigint;
+    last_update: Date;
 }
 
 // JWT Types

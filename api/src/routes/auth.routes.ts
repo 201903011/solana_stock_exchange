@@ -3,6 +3,7 @@ import { body } from 'express-validator';
 import { validate } from '../middleware/validator';
 import { authenticate, authorizeAdmin } from '../middleware/auth';
 import {
+    generateWallet,
     register,
     login,
     getProfile,
@@ -15,6 +16,8 @@ import {
 const router = Router();
 
 // Public routes
+router.post('/generate-wallet', generateWallet);
+
 router.post(
     '/register',
     validate([

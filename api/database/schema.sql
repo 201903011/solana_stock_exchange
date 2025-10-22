@@ -259,23 +259,192 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     INDEX idx_created (created_at)
 );
 
--- System Configuration Table
+-- Notifications Table
+CREATE TABLE IF NOT EXISTS notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    type ENUM(
+        'USER_REGISTRATION', 'KYC_APPROVED', 'KYC_REJECTED', 
+        'DEPOSIT_CONFIRMED', 'WITHDRAWAL_PROCESSING', 'WITHDRAWAL_CONFIRMED',
+        'NEW_LISTING', 'IPO_OPENED', 'IPO_ALLOTMENT', 
+        'ORDER_PLACED', 'ORDER_FILLED', 'ORDER_CANCELLED', 
+        'ORDERS_MATCHED', 'TRADE_EXECUTED', 'TRADE_SUCCESS'
+    ) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    data JSON,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_notifications (user_id),
+    INDEX idx_type (type),
+    INDEX idx_read_status (is_read),
+    INDEX idx_created (created_at)
+);
+
+-- Market Data Table (Cache for pricing)
+CREATE TABLE IF NOT EXISTS market_data (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT NOT NULL,
+    current_price BIGINT NOT NULL,
+    price_change_24h BIGINT DEFAULT 0,
+    price_change_percentage_24h DECIMAL(10,4) DEFAULT 0,
+    volume_24h BIGINT DEFAULT 0,
+    market_cap BIGINT DEFAULT 0,
+    high_24h BIGINT DEFAULT 0,
+    low_24h BIGINT DEFAULT 0,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_company_market (company_id),
+    INDEX idx_price (current_price),
+    INDEX idx_volume (volume_24h),
+    INDEX idx_updated (last_updated)
+);
+
+-- Order Book Levels Table (Cache for order book display)
+CREATE TABLE IF NOT EXISTS order_book_levels (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT NOT NULL,
+    side ENUM('BUY', 'SELL') NOT NULL,
+    price BIGINT NOT NULL,
+    quantity BIGINT NOT NULL,
+    total BIGINT NOT NULL,
+    orders_count INT NOT NULL DEFAULT 1,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_company_side_price (company_id, side, price),
+    INDEX idx_company_side (company_id, side),
+    INDEX idx_price_level (price),
+    INDEX idx_updated (last_updated)
+);
+
+-- Exchange Statistics Table
+CREATE TABLE IF NOT EXISTS exchange_stats (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    stat_date DATE NOT NULL,
+    total_users INT DEFAULT 0,
+    active_users INT DEFAULT 0,
+    total_companies INT DEFAULT 0,
+    listed_companies INT DEFAULT 0,
+    total_trades INT DEFAULT 0,
+    total_volume BIGINT DEFAULT 0,
+    active_orders INT DEFAULT 0,
+    pending_kyc INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_stat_date (stat_date),
+    INDEX idx_stat_date (stat_date)
+);
+
+-- User Sessions Table (For login tracking)
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    session_token VARCHAR(255) NOT NULL,
+    ip_address VARCHAR(45),
+    user_agent VARCHAR(500),
+    expires_at TIMESTAMP NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_session_token (session_token),
+    INDEX idx_user_sessions (user_id),
+    INDEX idx_expires (expires_at),
+    INDEX idx_active (is_active)
+);
+
+-- SOL Balance Cache Table (Mirror of on-chain balances)
+CREATE TABLE IF NOT EXISTS sol_balances (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    wallet_address VARCHAR(44) NOT NULL,
+    balance BIGINT NOT NULL DEFAULT 0,
+    locked_balance BIGINT NOT NULL DEFAULT 0,
+    available_balance BIGINT NOT NULL DEFAULT 0,
+    last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_user_balance (user_id),
+    INDEX idx_wallet_address (wallet_address),
+    INDEX idx_last_synced (last_synced)
+);
+
+-- Transaction Queue Table (For async processing)
+CREATE TABLE IF NOT EXISTS transaction_queue (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    transaction_type ENUM(
+        'CREATE_WALLET', 'CREATE_TOKEN_ACCOUNT', 'CREATE_TRADING_ACCOUNT',
+        'DEPOSIT_SOL', 'WITHDRAW_SOL', 'MINT_TOKENS', 'TRANSFER_TOKENS',
+        'PLACE_ORDER', 'CANCEL_ORDER', 'SETTLE_TRADE'
+    ) NOT NULL,
+    priority ENUM('LOW', 'MEDIUM', 'HIGH', 'URGENT') DEFAULT 'MEDIUM',
+    payload JSON NOT NULL,
+    status ENUM('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'RETRYING') DEFAULT 'PENDING',
+    error_message TEXT,
+    retry_count INT DEFAULT 0,
+    max_retries INT DEFAULT 3,
+    transaction_signature VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    processed_at TIMESTAMP NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_queue (user_id),
+    INDEX idx_status (status),
+    INDEX idx_type (transaction_type),
+    INDEX idx_priority (priority),
+    INDEX idx_created (created_at)
+);
+
+-- Rate Limits Table (API rate limiting)
+CREATE TABLE IF NOT EXISTS rate_limits (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    identifier VARCHAR(255) NOT NULL, -- IP address or user ID
+    endpoint VARCHAR(255) NOT NULL,
+    request_count INT NOT NULL DEFAULT 1,
+    window_start TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    UNIQUE KEY unique_identifier_endpoint (identifier, endpoint),
+    INDEX idx_expires (expires_at)
+);
+
+-- System Configuration Table (updated)
 CREATE TABLE IF NOT EXISTS system_config (
     id INT AUTO_INCREMENT PRIMARY KEY,
     config_key VARCHAR(100) UNIQUE NOT NULL,
     config_value TEXT,
     description VARCHAR(500),
+    is_sensitive BOOLEAN DEFAULT FALSE, -- For passwords, keys etc
     updated_by INT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (updated_by) REFERENCES users(id)
 );
 
--- Insert default system configurations
-INSERT INTO system_config (config_key, config_value, description) VALUES
-('EXCHANGE_ADDRESS', 'ExU8EoUrjN9xRi9n8af1i83fhALqTMCt5qjrdqMdG9RD', 'Solana Exchange Core Program Address'),
-('GOVERNANCE_ADDRESS', 'GoLKeg4YEp3D2rL4PpQpoMHGyZaduWyKWdz1KZqrnbNq', 'Solana Governance Program Address'),
-('MIN_DEPOSIT_AMOUNT', '1000000000', 'Minimum deposit amount in lamports (1 SOL)'),
-('MIN_WITHDRAWAL_AMOUNT', '500000000', 'Minimum withdrawal amount in lamports (0.5 SOL)'),
-('RAZORPAY_ENABLED', 'true', 'Enable Razorpay payments'),
-('TRADING_ENABLED', 'true', 'Enable trading functionality'),
-('IPO_ENABLED', 'true', 'Enable IPO functionality');
+-- Insert/Update default system configurations
+INSERT INTO system_config (config_key, config_value, description, is_sensitive) VALUES
+('EXCHANGE_ADDRESS', 'ExU8EoUrjN9xRi9n8af1i83fhALqTMCt5qjrdqMdG9RD', 'Solana Exchange Core Program Address', FALSE),
+('GOVERNANCE_ADDRESS', 'GoLKeg4YEp3D2rL4PpQpoMHGyZaduWyKWdz1KZqrnbNq', 'Solana Governance Program Address', FALSE),
+('MIN_DEPOSIT_AMOUNT', '1000000000', 'Minimum deposit amount in lamports (1 SOL)', FALSE),
+('MIN_WITHDRAWAL_AMOUNT', '500000000', 'Minimum withdrawal amount in lamports (0.5 SOL)', FALSE),
+('WITHDRAWAL_FEE_PERCENTAGE', '0.1', 'Withdrawal fee percentage', FALSE),
+('TRADING_FEE_PERCENTAGE', '0.5', 'Trading fee percentage', FALSE),
+('RAZORPAY_ENABLED', 'true', 'Enable Razorpay payments', FALSE),
+('TRADING_ENABLED', 'true', 'Enable trading functionality', FALSE),
+('IPO_ENABLED', 'true', 'Enable IPO functionality', FALSE),
+('NOTIFICATIONS_ENABLED', 'true', 'Enable notifications', FALSE),
+('MAX_ORDERS_PER_USER', '100', 'Maximum active orders per user', FALSE),
+('DEFAULT_TICK_SIZE', '1000000', 'Default tick size in lamports (0.001 SOL)', FALSE),
+('DEFAULT_MIN_ORDER_SIZE', '1', 'Default minimum order size', FALSE)
+ON DUPLICATE KEY UPDATE 
+config_value = VALUES(config_value),
+description = VALUES(description),
+is_sensitive = VALUES(is_sensitive);
+
+-- Add missing indexes for performance
+ALTER TABLE users ADD INDEX idx_is_active (is_active);
+ALTER TABLE companies ADD INDEX idx_is_active (is_active);
+ALTER TABLE orders ADD INDEX idx_user_status (user_id, status);
+ALTER TABLE trades ADD INDEX idx_trade_id (trade_id);
+ALTER TABLE ipos ADD INDEX idx_status_dates (status, open_date, close_date);
+ALTER TABLE ipo_applications ADD INDEX idx_ipo_status (ipo_id, status);
+ALTER TABLE wallet_transactions ADD INDEX idx_user_type_status (user_id, type, status);
+ALTER TABLE holdings ADD INDEX idx_user_company (user_id, company_id);
