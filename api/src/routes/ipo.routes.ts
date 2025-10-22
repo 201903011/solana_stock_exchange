@@ -26,7 +26,7 @@ router.get('/applications', authenticate, getUserIPOApplications);
 
 // Admin routes
 router.post(
-    '/',
+    '/create',
     authenticate,
     authorizeAdmin,
     validate([
