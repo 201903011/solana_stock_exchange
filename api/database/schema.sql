@@ -206,6 +206,8 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
     razorpay_order_id VARCHAR(100),
     razorpay_payment_id VARCHAR(100),
     razorpay_signature VARCHAR(255),
+    amount_inr DECIMAL(15,2) NULL COMMENT 'Amount in Indian Rupees for Razorpay payment',
+    sol_rate DECIMAL(15,2) NULL COMMENT 'SOL to INR conversion rate at time of transaction',
     transaction_signature VARCHAR(100), -- Solana transaction signature
     bank_account_number VARCHAR(50),
     bank_ifsc VARCHAR(20),
@@ -219,7 +221,8 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
     INDEX idx_user_wallet (user_id),
     INDEX idx_type (type),
     INDEX idx_status (status),
-    INDEX idx_razorpay_order (razorpay_order_id)
+    INDEX idx_razorpay_order (razorpay_order_id),
+    INDEX idx_razorpay_payment (razorpay_payment_id)
 );
 
 -- Bank Accounts Table (For Withdrawals)
