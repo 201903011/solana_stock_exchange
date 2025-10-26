@@ -13,6 +13,7 @@ import orderRoutes from './routes/order.routes';
 import portfolioRoutes from './routes/portfolio.routes';
 import ipoRoutes from './routes/ipo.routes';
 import walletRoutes from './routes/wallet.routes';
+import walletRoutesEnhanced from './routes/wallet.routes.enhanced';
 
 // Initialize Express app
 const app: Application = express();
@@ -48,6 +49,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/ipos', ipoRoutes);
 app.use('/api/wallet', walletRoutes);
+app.use('/api/wallet-new', walletRoutesEnhanced);
 
 // 404 Handler
 app.use((req: Request, res: Response) => {

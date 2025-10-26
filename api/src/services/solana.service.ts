@@ -19,6 +19,7 @@ import {
     createAssociatedTokenAccountInstruction,
     getAssociatedTokenAddressSync,
 } from '@solana/spl-token';
+import bs58 from 'bs58';
 import { config } from '../config';
 
 export class SolanaService {
@@ -31,7 +32,7 @@ export class SolanaService {
         // Load admin keypair if available
         if (config.solana.adminWalletPrivateKey) {
             try {
-                const secretKey = Uint8Array.from(JSON.parse(config.solana.adminWalletPrivateKey));
+                const secretKey = bs58.decode(config.solana.adminWalletPrivateKey);
                 this.adminKeypair = Keypair.fromSecretKey(secretKey);
             } catch (error) {
                 console.error('Failed to load admin keypair:', error);

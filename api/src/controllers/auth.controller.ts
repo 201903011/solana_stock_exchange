@@ -111,7 +111,7 @@ export async function register(
             [email, password_hash, full_name, phone || null, validatedWalletAddress || null]
         );
 
-        const userId = (result as any).insertId;
+        const userId = (result as Array<any>)[0].insertId;
 
         // Initialize SOL balance cache
         if (validatedWalletAddress) {

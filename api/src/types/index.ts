@@ -218,6 +218,7 @@ export interface IPOCreation {
 }
 
 export enum IPOApplicationStatus {
+    PAYMENT_PENDING = 'PAYMENT_PENDING',
     PENDING = 'PENDING',
     ALLOTTED = 'ALLOTTED',
     REJECTED = 'REJECTED',
@@ -241,6 +242,7 @@ export interface IPOApplication {
 export interface IPOApplicationRequest {
     ipo_id: number;
     quantity: string;
+    transaction_signature?: string; // Optional signature for SOL payment verification
 }
 
 // Holdings Types

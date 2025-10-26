@@ -165,7 +165,7 @@ CREATE TABLE IF NOT EXISTS ipo_applications (
     quantity BIGINT NOT NULL,
     amount BIGINT NOT NULL, -- in lamports
     allotted_quantity BIGINT DEFAULT 0,
-    status ENUM('PENDING', 'ALLOTTED', 'REJECTED', 'REFUNDED') DEFAULT 'PENDING',
+    status ENUM('PAYMENT_PENDING','PENDING', 'ALLOTTED', 'REJECTED', 'REFUNDED') DEFAULT 'PAYMENT_PENDING',
     transaction_signature VARCHAR(100) UNIQUE, -- Solana transaction signature
     escrow_address VARCHAR(44), -- Individual escrow PDA
     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -423,6 +423,11 @@ CREATE TABLE IF NOT EXISTS system_config (
 );
 
 -- Insert/Update default system configurations
+-- Admin: DcjakLshDNnnRdDGRwHcR4BaENKiDXFCy2Pi2vHJB5xU
+-- Exchange Program: ExU8EoUrjN9xRi9n8af1i83fhALqTMCt5qjrdqMdG9RD
+-- Escrow Program: Estdrnjx9yezLcJZs4nPaciYqt1vUEQyXYeEZZBJ5vRB
+-- Fee Program: FeK4og5tcnNBKAz41LgFFTXMVWjJcNenk2H7g8cDmAhU
+-- Governance Program: GoLKeg4YEp3D2rL4PpQpoMHGyZaduWyKWdz1KZqrnbNq
 INSERT INTO system_config (config_key, config_value, description, is_sensitive) VALUES
 ('EXCHANGE_ADDRESS', 'ExU8EoUrjN9xRi9n8af1i83fhALqTMCt5qjrdqMdG9RD', 'Solana Exchange Core Program Address', FALSE),
 ('GOVERNANCE_ADDRESS', 'GoLKeg4YEp3D2rL4PpQpoMHGyZaduWyKWdz1KZqrnbNq', 'Solana Governance Program Address', FALSE),
@@ -441,13 +446,3 @@ ON DUPLICATE KEY UPDATE
 config_value = VALUES(config_value),
 description = VALUES(description),
 is_sensitive = VALUES(is_sensitive);
-
--- Add missing indexes for performance
-ALTER TABLE users ADD INDEX idx_is_active (is_active);
-ALTER TABLE companies ADD INDEX idx_is_active (is_active);
-ALTER TABLE orders ADD INDEX idx_user_status (user_id, status);
-ALTER TABLE trades ADD INDEX idx_trade_id (trade_id);
-ALTER TABLE ipos ADD INDEX idx_status_dates (status, open_date, close_date);
-ALTER TABLE ipo_applications ADD INDEX idx_ipo_status (ipo_id, status);
-ALTER TABLE wallet_transactions ADD INDEX idx_user_type_status (user_id, type, status);
-ALTER TABLE holdings ADD INDEX idx_user_company (user_id, company_id);

@@ -5,9 +5,11 @@ import { authenticate, authorizeAdmin } from '../middleware/auth';
 import {
     createIPO,
     getAllIPOs,
-    applyToIPO,
+    // applyToIPO,
     getUserIPOApplications,
 } from '../controllers/ipo.controller';
+
+import { applyToIPO, allocateIPOTokens, confirmIPOPayment } from '../controllers/company.controller.enhanced';
 
 const router = Router();
 
@@ -23,6 +25,17 @@ router.post(
     applyToIPO
 );
 router.get('/applications', authenticate, getUserIPOApplications);
+
+// Confirm SOL payment after client-side transaction signing
+router.post(
+    '/confirm-payment',
+    authenticate,
+    validate([
+        body('application_id').isInt().withMessage('Application ID is required'),
+        body('transaction_signature').notEmpty().withMessage('Transaction signature is required'),
+    ]),
+    confirmIPOPayment
+);
 
 // Admin routes
 router.post(
@@ -41,5 +54,14 @@ router.post(
     ]),
     createIPO
 );
+
+// Admin routes
+router.post(
+    '/allocate-tokens',
+    authenticate,
+    authorizeAdmin,
+    allocateIPOTokens
+);
+
 
 export default router;

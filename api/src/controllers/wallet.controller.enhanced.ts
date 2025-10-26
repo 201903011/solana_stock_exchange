@@ -161,7 +161,7 @@ export async function depositSOL(
             [userId, 'DEPOSIT', Math.floor(depositAmount * LAMPORTS_PER_SOL)]
         );
 
-        const transactionId = (txResult as any).insertId;
+        const transactionId = (txResult as Array<any>)[0].insertId;
 
         try {
             // Perform airdrop on Solana (for testing)
@@ -463,7 +463,7 @@ export async function getTransactionHistory(
              ${whereClause}
              ORDER BY initiated_at DESC
              LIMIT ? OFFSET ?`,
-            [...params, Number(limit), offset]
+            [...params, limit.toString(), offset.toString()]
         );
 
         const [{ total }] = await query<{ total: number }>(
@@ -545,3 +545,4 @@ export async function getBankAccounts(req: AuthRequest, res: Response<ApiRespons
         });
     }
 }
+

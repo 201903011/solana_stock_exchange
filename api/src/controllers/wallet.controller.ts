@@ -305,7 +305,7 @@ export async function requestWithdrawal(
         const userId = req.user?.userId;
         const { amount, bank_account_id }: WithdrawalRequest = req.body as any;
 
-        const amountLamports = BigInt(amount);
+        const amountLamports = BigInt(parseFloat(amount) * LAMPORTS_PER_SOL);
         const minWithdrawal = BigInt(500000000); // 0.5 SOL
 
         if (amountLamports < minWithdrawal) {
