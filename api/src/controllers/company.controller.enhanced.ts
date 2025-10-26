@@ -495,7 +495,7 @@ export async function applyToIPO(
         // Check user's SOL balance
         const walletPubkey = new PublicKey(user.wallet_address);
         const solBalance = await solanaService.getSOLBalance(walletPubkey);
-        const requiredSOL = Number(totalAmount) / 1e9;
+        const requiredSOL = Number(totalAmount);
 
         if (solBalance < requiredSOL) {
             await connection.rollback();
@@ -525,7 +525,7 @@ export async function applyToIPO(
         const appResult = await connection.execute(
             `INSERT INTO ipo_applications (
                 ipo_id, user_id, quantity, amount, status, escrow_address
-            ) VALUES (?, ?, ?, ?, 'PENDING', ?)`,
+            ) VALUES (?, ?, ?, ?, 'PAYMENT_PENDING', ?)`,
             [
                 applicationData.ipo_id,
                 userId,
@@ -546,118 +546,118 @@ export async function applyToIPO(
         console.log(`   From: ${walletPubkey.toString().slice(0, 16)}...`);
         console.log(`   To: Admin/Escrow Wallet`);
 
-        try {
-            // Option 1: Client-side signing (recommended for security)
-            // Create a transaction for the frontend to sign and verify payment
+        // try {
+        //     // Option 1: Client-side signing (recommended for security)
+        //     // Create a transaction for the frontend to sign and verify payment
 
-            const adminPublicKey = solanaService.getAdminPublicKey();
-            if (!adminPublicKey) {
-                throw new Error('Admin wallet not configured');
-            }
+        //     const adminPublicKey = solanaService.getAdminPublicKey();
+        //     if (!adminPublicKey) {
+        //         throw new Error('Admin wallet not configured');
+        //     }
 
-            // Check if transaction signature was provided (frontend already signed and sent the transaction)
-            if (applicationData.transaction_signature) {
-                console.log(`🔍 Verifying SOL transfer transaction: ${applicationData.transaction_signature}`);
+        //     // Check if transaction signature was provided (frontend already signed and sent the transaction)
+        //     if (applicationData.transaction_signature) {
+        //         console.log(`🔍 Verifying SOL transfer transaction: ${applicationData.transaction_signature}`);
 
-                // Verify the transaction exists and is confirmed
-                const solanaConnection = solanaService.getConnection();
-                const txInfo = await solanaConnection.getTransaction(applicationData.transaction_signature, {
-                    commitment: 'confirmed'
-                });
+        //         // Verify the transaction exists and is confirmed
+        //         const solanaConnection = solanaService.getConnection();
+        //         const txInfo = await solanaConnection.getTransaction(applicationData.transaction_signature, {
+        //             commitment: 'confirmed'
+        //         });
 
-                if (!txInfo) {
-                    throw new Error('Transaction not found or not confirmed');
-                }
+        //         if (!txInfo) {
+        //             throw new Error('Transaction not found or not confirmed');
+        //         }
 
-                // Verify transaction details
-                const instruction = txInfo.transaction.message.instructions[0];
-                const accountKeys = txInfo.transaction.message.accountKeys;
+        //         // Verify transaction details
+        //         const instruction = txInfo.transaction.message.instructions[0];
+        //         const accountKeys = txInfo.transaction.message.accountKeys;
 
-                // Check if it's a SOL transfer from user to admin
-                const fromAccount = accountKeys[instruction.accounts[0]];
-                const toAccount = accountKeys[instruction.accounts[1]];
+        //         // Check if it's a SOL transfer from user to admin
+        //         const fromAccount = accountKeys[instruction.accounts[0]];
+        //         const toAccount = accountKeys[instruction.accounts[1]];
 
-                if (fromAccount.toString() !== walletPubkey.toString()) {
-                    throw new Error('Transaction sender mismatch');
-                }
+        //         if (fromAccount.toString() !== walletPubkey.toString()) {
+        //             throw new Error('Transaction sender mismatch');
+        //         }
 
-                if (toAccount.toString() !== adminPublicKey.toString()) {
-                    throw new Error('Transaction recipient mismatch');
-                }
+        //         if (toAccount.toString() !== adminPublicKey.toString()) {
+        //             throw new Error('Transaction recipient mismatch');
+        //         }
 
-                // Verify transfer amount (approximate check due to fees)
-                const postBalance = txInfo.meta?.postBalances[0] || 0;
-                const preBalance = txInfo.meta?.preBalances[0] || 0;
-                const transferredLamports = preBalance - postBalance;
-                const expectedLamports = Math.floor(requiredSOL * 1e9);
+        //         // Verify transfer amount (approximate check due to fees)
+        //         const postBalance = txInfo.meta?.postBalances[0] || 0;
+        //         const preBalance = txInfo.meta?.preBalances[0] || 0;
+        //         const transferredLamports = preBalance - postBalance;
+        //         const expectedLamports = Math.floor(requiredSOL * 1e9);
 
-                // Allow for transaction fees (typically 5000 lamports)
-                const tolerance = 10000; // 0.00001 SOL tolerance for fees
-                if (Math.abs(transferredLamports - expectedLamports) > tolerance) {
-                    throw new Error(`Transfer amount mismatch. Expected: ${expectedLamports}, Actual: ${transferredLamports}`);
-                }
+        //         // Allow for transaction fees (typically 5000 lamports)
+        //         const tolerance = 10000; // 0.00001 SOL tolerance for fees
+        //         if (Math.abs(transferredLamports - expectedLamports) > tolerance) {
+        //             throw new Error(`Transfer amount mismatch. Expected: ${expectedLamports}, Actual: ${transferredLamports}`);
+        //         }
 
-                console.log(`✅ SOL transfer verified:`);
-                console.log(`   Transaction: ${applicationData.transaction_signature}`);
-                console.log(`   Amount: ${(transferredLamports / 1e9).toFixed(4)} SOL`);
-                console.log(`   Status: Confirmed`);
+        //         console.log(`✅ SOL transfer verified:`);
+        //         console.log(`   Transaction: ${applicationData.transaction_signature}`);
+        //         console.log(`   Amount: ${(transferredLamports / 1e9).toFixed(4)} SOL`);
+        //         console.log(`   Status: Confirmed`);
 
-                // Update application with verified transaction
-                await connection.execute(
-                    'UPDATE ipo_applications SET payment_signature = ? WHERE id = ?',
-                    [applicationData.transaction_signature, applicationId]
-                );
+        //         // Update application with verified transaction
+        //         await connection.execute(
+        //             'UPDATE ipo_applications SET payment_signature = ? WHERE id = ?',
+        //             [applicationData.transaction_signature, applicationId]
+        //         );
 
-            } else {
-                // No transaction provided - this means frontend needs to create and sign the transaction
-                // Return transaction details for frontend to process
-                const transferInstruction = {
-                    type: 'sol_transfer',
-                    from: walletPubkey.toString(),
-                    to: adminPublicKey.toString(),
-                    amount_lamports: Math.floor(requiredSOL * 1e9),
-                    amount_sol: requiredSOL
-                };
+        //     } else {
+        //         // No transaction provided - this means frontend needs to create and sign the transaction
+        //         // Return transaction details for frontend to process
+        //         const transferInstruction = {
+        //             type: 'sol_transfer',
+        //             from: walletPubkey.toString(),
+        //             to: adminPublicKey.toString(),
+        //             amount_lamports: Math.floor(requiredSOL * 1e9),
+        //             amount_sol: requiredSOL
+        //         };
 
-                // Temporarily save application as PAYMENT_PENDING
-                await connection.execute(
-                    'UPDATE ipo_applications SET status = ? WHERE id = ?',
-                    ['PAYMENT_PENDING', applicationId]
-                );
+        //         // Temporarily save application as PAYMENT_PENDING
+        //         await connection.execute(
+        //             'UPDATE ipo_applications SET status = ? WHERE id = ?',
+        //             ['PAYMENT_PENDING', applicationId]
+        //         );
 
-                await connection.commit();
+        //         await connection.commit();
 
-                console.log(`⏳ Payment pending - waiting for client-side transaction:`);
-                console.log(`   Required SOL: ${requiredSOL.toFixed(4)} SOL`);
-                console.log(`   Transfer to: ${adminPublicKey.toString()}`);
+        //         console.log(`⏳ Payment pending - waiting for client-side transaction:`);
+        //         console.log(`   Required SOL: ${requiredSOL.toFixed(4)} SOL`);
+        //         console.log(`   Transfer to: ${adminPublicKey.toString()}`);
 
-                return res.status(202).json({
-                    success: true,
-                    data: {
-                        application_id: applicationId,
-                        ipo_symbol: ipo.company_symbol,
-                        quantity: quantity.toString(),
-                        total_amount_sol: requiredSOL,
-                        token_account: tokenAccountAddress.toBase58(),
-                        status: 'PAYMENT_PENDING',
-                        payment_instruction: transferInstruction
-                    },
-                    message: 'IPO application created. Please complete SOL payment to confirm.',
-                    timestamp: new Date()
-                });
-            }
+        //         return res.status(202).json({
+        //             success: true,
+        //             data: {
+        //                 application_id: applicationId,
+        //                 ipo_symbol: ipo.company_symbol,
+        //                 quantity: quantity.toString(),
+        //                 total_amount_sol: requiredSOL,
+        //                 token_account: tokenAccountAddress.toBase58(),
+        //                 status: 'PAYMENT_PENDING',
+        //                 payment_instruction: transferInstruction
+        //             },
+        //             message: 'IPO application created. Please complete SOL payment to confirm.',
+        //             timestamp: new Date()
+        //         });
+        //     }
 
-        } catch (error) {
-            console.error('❌ Error processing SOL payment:', error);
-            // In case of payment failure, rollback the application
-            await connection.rollback();
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to process SOL payment. IPO application cancelled.',
-                message: error instanceof Error ? error.message : 'Unknown payment error',
-                timestamp: new Date()
-            });
-        }
+        // } catch (error) {
+        //     console.error('❌ Error processing SOL payment:', error);
+        //     // In case of payment failure, rollback the application
+        //     await connection.rollback();
+        //     return res.status(500).json({
+        //         success: false,
+        //         error: 'Failed to process SOL payment. IPO application cancelled.',
+        //         message: error instanceof Error ? error.message : 'Unknown payment error',
+        //         timestamp: new Date()
+        //     });
+        // }
 
         // Update IPO subscription count
         await connection.execute(
@@ -670,7 +670,7 @@ export async function applyToIPO(
         console.log(`✅ IPO Application Successful:`);
         console.log(`   Application ID: ${applicationId}`);
         console.log(`   Token Account: ${tokenAccountAddress.toBase58()}`);
-        console.log(`   Status: PENDING\n`);
+        console.log(`   Status: PAYMENT_PENDING\n`);
 
         return res.status(201).json({
             success: true,
@@ -680,7 +680,7 @@ export async function applyToIPO(
                 quantity: quantity.toString(),
                 total_amount_sol: requiredSOL,
                 token_account: tokenAccountAddress.toBase58(),
-                status: 'PENDING'
+                status: 'PAYMENT_PENDINGs'
             },
             message: 'IPO application submitted successfully',
             timestamp: new Date()
@@ -793,7 +793,7 @@ export async function allocateIPOTokens(
                 const mintSignature = await solanaService.mintTokens(
                     mintPubkey,
                     tokenAccountPubkey,
-                    Number(allocatedQuantity) / 1e9, // Convert back to token units
+                    Number(allocatedQuantity), // Convert back to token units
                     9
                 );
 

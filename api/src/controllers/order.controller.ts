@@ -54,31 +54,6 @@ export async function placeOrder(
         }
 
         // Validate and align price for limit orders
-        if (orderData.order_type === 'LIMIT' && orderData.price) {
-            const tickSize = BigInt(company.tick_size || '1000000');
-            const price = BigInt(orderData.price);
-
-            // Check if price is aligned to tick size
-            const remainder = price % tickSize;
-            if (remainder !== BigInt(0)) {
-                // Align price to tick size (round down)
-                const alignedPrice = price - remainder;
-
-                if (alignedPrice <= BigInt(0)) {
-                    await connection.rollback();
-                    return res.status(400).json({
-                        success: false,
-                        error: `Price must be at least ${tickSize.toString()} (one tick size). Tick size for ${company.symbol} is ${tickSize.toString()} lamports.`,
-                    });
-                }
-
-                console.log(`Price ${price} not aligned to tick size ${tickSize}`);
-                console.log(`Auto-aligning to ${alignedPrice}`);
-
-                // Update the price to aligned value
-                orderData.price = alignedPrice.toString();
-            }
-        }
 
         // Place order on Solana
         let txSignature: string;

@@ -15,7 +15,7 @@ const razorpay = new Razorpay({
 
 // SOL to INR conversion rate (this should ideally come from an API or database config)
 // You can update this to fetch from a price API like CoinGecko or maintain in database
-const SOL_TO_INR_RATE = 12000; // Example: 1 SOL = 12,000 INR
+const SOL_TO_INR_RATE = 1; // Example: 1 SOL = 12,000 INR
 const LAMPORTS_PER_SOL = 1000000000;
 
 /**
@@ -56,8 +56,8 @@ export async function createDeposit(
         const amountSOL = parseFloat(amount);
 
         // Validate amount
-        const minDeposit = 0.1; // 0.1 SOL minimum
-        const maxDeposit = 100; // 100 SOL maximum
+        const minDeposit = 1; // 1 SOL minimum
+        const maxDeposit = 100000; // 100000 SOL maximum
 
         if (amountSOL < minDeposit || amountSOL > maxDeposit) {
             await connection.rollback();
