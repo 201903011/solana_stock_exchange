@@ -36,7 +36,7 @@ export const config = {
         governanceProgramId: process.env.GOVERNANCE_PROGRAM_ID || 'GoLKeg4YEp3D2rL4PpQpoMHGyZaduWyKWdz1KZqrnbNq',
         escrowProgramId: process.env.ESCROW_PROGRAM_ID || '',
         feeManagementProgramId: process.env.FEE_MANAGEMENT_PROGRAM_ID || '',
-        adminWalletPrivateKey: process.env.ADMIN_WALLET_PRIVATE_KEY || 'DcjakLshDNnnRdDGRwHcR4BaENKiDXFCy2Pi2vHJB5xU',
+        adminWalletPrivateKey: process.env.ADMIN_WALLET_PRIVATE_KEY || '5q2GK2K7edZaEkrADHKYWrAKwdzah7NxRLWnTUqm8q84atN4k4aVRDuTZ8nnVC2XmDsBhXcw5kGnepwvqdyJ7F7n',
     },
 
     // Razorpay
