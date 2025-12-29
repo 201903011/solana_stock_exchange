@@ -148,7 +148,7 @@ async function ensureTradingAccountInitialized(userPublicKey: PublicKey, program
                         owner: userPublicKey,
                         systemProgram: SystemProgram.programId,
                     })
-                    .signers([])
+                    .signers([adminWallet])
                     .rpc();
 
                 console.log(`Trading account initialized successfully for user: ${userPublicKey.toString()}`);
